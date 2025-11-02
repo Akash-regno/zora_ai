@@ -157,6 +157,7 @@ export default function AuthModal({ open, onOpenChange }: AuthModalProps) {
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
               required
+              autoComplete={isSignUp ? "new-password" : "current-password"}
               minLength={isSignUp ? 8 : undefined}
               className="bg-[#212121] border border-[#4d4d4d] text-[#ececec] placeholder:text-[#8e8e8e] focus:border-[#565656] focus:ring-0 rounded-lg"
             />
@@ -178,6 +179,7 @@ export default function AuthModal({ open, onOpenChange }: AuthModalProps) {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 disabled={loading}
                 required
+                autoComplete="new-password"
                 className="bg-[#212121] border border-[#4d4d4d] text-[#ececec] placeholder:text-[#8e8e8e] focus:border-[#565656] focus:ring-0 rounded-lg"
               />
             </div>

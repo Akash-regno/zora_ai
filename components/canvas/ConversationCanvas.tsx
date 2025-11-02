@@ -49,7 +49,8 @@ export default function ConversationCanvas({
   const [followUpParentId, setFollowUpParentId] = useState<string | null>(null);
   const [followUpQuestion, setFollowUpQuestion] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const nodeIdCounter = useRef(0);
+  const nodeIdCounter = useRef(initialNodes.length);
+  const hasInitialized = useRef(false);
 
   // Custom node change handler to track manual positioning
   const handleNodesChange = useCallback((changes: any) => {
@@ -103,10 +104,33 @@ export default function ConversationCanvas({
     return history;
   }, [nodes, edges]);
 
-  // Notify parent of changes
+  // Notify parent of changes - strip out functions before saving
+  // Use a ref to track the last saved state to avoid infinite loops
+  const lastSavedState = useRef<string>('');
+  
   useEffect(() => {
     if (onUpdate && nodes.length > 0) {
-      onUpdate(nodes, edges);
+      // Create a hash of the current state
+      const currentState = JSON.stringify({ 
+        nodeIds: nodes.map(n => n.id),
+        edgeIds: edges.map(e => e.id),
+        nodeCount: nodes.length 
+      });
+      
+      // Only update if state actually changed
+      if (currentState !== lastSavedState.current) {
+        lastSavedState.current = currentState;
+        
+        // Remove non-serializable data (functions) before saving
+        const serializableNodes = nodes.map(node => ({
+          ...node,
+          data: {
+            ...node.data,
+            onAddFollowUp: undefined, // Remove function
+          }
+        }));
+        onUpdate(serializableNodes, edges);
+      }
     }
   }, [nodes, edges, onUpdate]);
 
@@ -123,21 +147,38 @@ export default function ConversationCanvas({
 
     let aiResponse = '';
     try {
+      console.log('Sending request to /api/chat with messages:', conversationHistory);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: conversationHistory }),
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
+
+      console.log('Response status:', response.status);
+
       if (!response.ok) {
-        throw new Error('Failed to get AI response');
+        const errorText = await response.text();
+        console.error('API error response:', errorText);
+        throw new Error(`Failed to get AI response: ${response.status} ${errorText}`);
       }
 
       const data = await response.json();
+      console.log('API response data:', data);
       aiResponse = data.response;
     } catch (error) {
       console.error('Error fetching AI response:', error);
-      aiResponse = 'Sorry, I encountered an error. Please try again.';
+      if (error instanceof Error && error.name === 'AbortError') {
+        aiResponse = 'Request timed out. Please try again.';
+      } else {
+        aiResponse = `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`;
+      }
     }
 
     const conversationNode: Node<ConversationNodeData> = {
@@ -148,42 +189,73 @@ export default function ConversationCanvas({
         question,
         response: aiResponse,
         timestamp,
-        onAddFollowUp: handleAddFollowUp,
+        onAddFollowUp: (nodeId: string, q: string) => {
+          createConversationNode(q, nodeId);
+        },
         positioned: false,
         manuallyPositioned: false,
       },
     };
 
-    // Keep existing nodes as-is (don't change their positioned status)
-    const newNodes = [...nodes, conversationNode];
-    const newEdges = [...edges];
+    // Use functional updates to avoid stale closure issues
+    // First update edges
+    let updatedEdges: Edge[] = [];
+    setEdges((currentEdges) => {
+      const newEdges = [...currentEdges];
+      if (parentId) {
+        newEdges.push({ id: `${parentId}-${nodeId}`, source: parentId, target: nodeId });
+      }
+      updatedEdges = newEdges;
+      return newEdges;
+    });
 
-    if (parentId) {
-      newEdges.push({ id: `${parentId}-${nodeId}`, source: parentId, target: nodeId });
-    }
+    // Then update nodes with the new edges
+    setNodes((currentNodes) => {
+      const newNodes = [...currentNodes, conversationNode];
 
-    const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(newNodes, newEdges);
-    setNodes(layoutedNodes);
-    setEdges(layoutedEdges);
-    setIsLoading(false);
-  }, [nodes, edges, getConversationHistory, setNodes, setEdges]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleAddFollowUp = useCallback((parentNodeId: string, question: string) => {
-    createConversationNode(question, parentNodeId);
-  }, [createConversationNode]);
-
-  // Update all nodes with the latest callback when it changes
-  useEffect(() => {
-    setNodes((nds) =>
-      nds.map((node) => ({
+      const { nodes: layoutedNodes } = getLayoutedElements(newNodes, updatedEdges);
+      
+      // Update all nodes to have the callback
+      const nodesWithCallback = layoutedNodes.map(node => ({
         ...node,
         data: {
           ...node.data,
-          onAddFollowUp: handleAddFollowUp,
+          onAddFollowUp: (nodeId: string, q: string) => {
+            createConversationNode(q, nodeId);
+          },
+        }
+      }));
+      
+      return nodesWithCallback;
+    });
+
+    setIsLoading(false);
+  }, [getConversationHistory, setNodes, setEdges]);
+
+  // Restore callbacks to nodes on mount
+  useEffect(() => {
+    if (!hasInitialized.current && nodes.length > 0) {
+      hasInitialized.current = true;
+      const nodesWithCallback = nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          onAddFollowUp: (nodeId: string, q: string) => {
+            createConversationNode(q, nodeId);
+          },
         },
-      }))
-    );
-  }, [handleAddFollowUp, setNodes]);
+      }));
+      setNodes(nodesWithCallback);
+    }
+  }, [nodes, createConversationNode, setNodes]);
+
+  const handleStartConversation = useCallback(async () => {
+    const question = searchTerm.trim();
+    if (!question) return;
+
+    await createConversationNode(question, null);
+    setSearchTerm('');
+  }, [createConversationNode, searchTerm]);
 
   const handleSubmitFollowUp = useCallback(async () => {
     if (!followUpQuestion.trim() || !followUpParentId) return;
@@ -193,14 +265,6 @@ export default function ConversationCanvas({
     setFollowUpQuestion('');
     setFollowUpParentId(null);
   }, [followUpQuestion, followUpParentId, createConversationNode]);
-
-  const handleStartConversation = useCallback(async () => {
-    const question = searchTerm.trim();
-    if (!question) return;
-
-    await createConversationNode(question, null);
-    setSearchTerm('');
-  }, [createConversationNode, searchTerm]);
 
   const onConnect = useCallback(
     (connection: Connection) => setEdges((eds) => addEdge(connection, eds)),
@@ -230,7 +294,7 @@ export default function ConversationCanvas({
         onConnect={onConnect}
         nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ padding: 0.2, maxZoom: 0.7 }}
+        fitViewOptions={{ padding: 0.3, maxZoom: 1, minZoom: 0.5 }}
         minZoom={0.1}
         maxZoom={2}
         noWheelClassName="nowheel"

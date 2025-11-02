@@ -37,10 +37,10 @@ export default function ConversationNode({ id, data }: NodeProps<any>) {
         className={`w-[450px] bg-[#2f2f2f] border border-[#4d4d4d] rounded-2xl shadow-lg overflow-hidden flex flex-col nowheel select-none transition-all duration-300 ease-in-out ${
           isLongContent 
             ? (showFooter ? 'h-[468px]' : 'h-[400px]')
-            : (showFooter ? 'min-h-[200px] max-h-[468px]' : 'min-h-[200px] max-h-[400px]')
+            : (showFooter ? '' : '')
         }`}
       >
-        <div className={`p-6 space-y-4 scrollbar-thin ${isLongContent ? 'flex-1 overflow-y-auto' : 'flex-shrink-0'}`}>
+        <div className={`p-6 space-y-4 scrollbar-thin ${isLongContent ? 'flex-1 overflow-y-auto' : ''}`}>
           <div 
             className="nodrag text-content"
             onPointerDown={preventReactFlowEvents}

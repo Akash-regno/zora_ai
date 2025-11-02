@@ -62,14 +62,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     console.log('Signing out...');
     try {
+      // Clear local state first
+      setUser(null);
+      setSession(null);
+      
+      // Sign out from Supabase (ignore session missing errors)
       const { error } = await supabase.auth.signOut();
-      if (error) {
+      if (error && !error.message?.includes('session')) {
         console.error('Sign out error:', error);
-      } else {
-        console.log('Signed out successfully');
       }
-    } catch (error) {
-      console.error('Sign out failed:', error);
+      
+      // Force clear localStorage to ensure session is removed
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('bubbles-auth-token');
+        // Also clear any other Supabase keys
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-')) {
+            localStorage.removeItem(key);
+          }
+        });
+      }
+      
+      console.log('Signed out successfully');
+    } catch (error: any) {
+      // Ignore session missing errors - they mean we're already signed out
+      if (!error?.message?.includes('session') && !error?.message?.includes('Auth session missing')) {
+        console.error('Sign out failed:', error);
+      }
+      // Still clear localStorage even if API call fails
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('bubbles-auth-token');
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-')) {
+            localStorage.removeItem(key);
+          }
+        });
+      }
     }
   };
 
