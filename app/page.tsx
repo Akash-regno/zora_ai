@@ -1,5 +1,5 @@
-import ConversationCanvas from '@/components/ConversationCanvas';
+import CanvasManager from '@/components/canvas/CanvasManager';
 
 export default function Home() {
-  return <ConversationCanvas />;
+  return <CanvasManager />;
 }
