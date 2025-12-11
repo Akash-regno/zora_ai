@@ -14,6 +14,11 @@ app.post('/api/chat', async (req, res) => {
   try {
     const { message, history = [] } = req.body;
 
+    // Validate API key
+    if (!process.env.GROQ_API_KEY) {
+      return res.status(500).json({ error: 'GROQ_API_KEY is not configured. Please set it in your environment variables.' });
+    }
+
     const messages = [
       {
         role: 'system',
@@ -37,10 +42,27 @@ app.post('/api/chat', async (req, res) => {
       })
     });
 
+    // Check if response is ok before parsing
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = 'Groq API error';
+      
+      try {
+        const errorData = JSON.parse(errorText);
+        errorMessage = errorData.error?.message || errorMessage;
+      } catch (e) {
+        errorMessage = errorText || errorMessage;
+      }
+      
+      console.error('Groq API Error:', errorMessage);
+      return res.status(response.status).json({ error: errorMessage });
+    }
+
     const data = await response.json();
     
-    if (!response.ok) {
-      throw new Error(data.error?.message || 'Groq API error');
+    // Validate response structure
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      throw new Error('Invalid response structure from Groq API');
     }
 
     res.json({
@@ -50,7 +72,7 @@ app.post('/api/chat', async (req, res) => {
 
   } catch (error) {
     console.error('Error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message || 'An unexpected error occurred' });
   }
 });
 
