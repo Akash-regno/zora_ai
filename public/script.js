@@ -226,7 +226,24 @@ async function sendMessage() {
       })
     });
 
-    const data = await response.json();
+    // Check if response has content before parsing
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      throw new Error(`Server returned non-JSON response: ${text.substring(0, 100)}`);
+    }
+
+    const text = await response.text();
+    if (!text) {
+      throw new Error('Server returned empty response. Please check if GROQ_API_KEY is set in Vercel environment variables.');
+    }
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new Error(`Invalid JSON response: ${text.substring(0, 100)}`);
+    }
 
     if (!response.ok) {
       throw new Error(data.error || 'Failed to get response');
