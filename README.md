@@ -35,3 +35,21 @@ npm start
 - Backend: Node.js + Express
 - Frontend: Vanilla JavaScript
 - AI: Groq API (Llama 3.3 70B)
+
+## Deployment
+
+### Deploy to Render, Railway, or similar platforms:
+
+1. Push your code to GitHub (make sure `.env` is not committed)
+2. Connect your repository to the platform
+3. Set environment variable: `GROQ_API_KEY=your_actual_key`
+4. The platform will automatically use `PORT` from environment
+5. Deploy!
+
+### Deploy to Vercel:
+- Note: Vercel is optimized for serverless. Consider using Render or Railway for this Express app.
+
+### Important:
+- Never commit your `.env` file with real API keys
+- Set `GROQ_API_KEY` as an environment variable in your deployment platform
+- The app will use `process.env.PORT` which most platforms provide automatically
