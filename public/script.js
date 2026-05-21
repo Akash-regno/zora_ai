@@ -1,6 +1,8 @@
 let conversationHistory = [];
 let chatSessions = [];
 let currentSessionId = null;
+let selectedModel = 'groq'; // Default model
+let selectedImage = null; // Store selected image
 
 // Lock screen functionality
 let isUnlocked = false;
@@ -108,7 +110,7 @@ function newChat() {
         </svg>
       </div>
       <h2>Hello, Developer!</h2>
-      <p>I'm LolliBot, your AI coding assistant. What can I help you build today?</p>
+      <p>I'm ZORA, your AI coding assistant. What can I help you build today?</p>
       <div class="examples">
         <button class="example-btn shortcut-btn" onclick="insertShortcut('Provide only the code: ')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -184,6 +186,115 @@ function insertShortcut(text) {
   input.setSelectionRange(text.length, text.length);
 }
 
+function toggleModelDropdown() {
+  const dropdown = document.getElementById('modelDropdownMenu');
+  dropdown.classList.toggle('show');
+}
+
+function selectModel(model) {
+  selectedModel = model;
+  const modelText = document.getElementById('selectedModelText');
+  
+  // Update button text
+  if (model === 'groq') {
+    modelText.textContent = 'Groq';
+  } else if (model === 'perplexity') {
+    modelText.textContent = 'Perplexity';
+  } else if (model === 'gemini') {
+    modelText.textContent = 'Gemini';
+  }
+  
+  // Clear selected image if switching away from Gemini
+  if (model !== 'gemini' && selectedImage) {
+    clearImage();
+  }
+  
+  // Update checkmarks
+  document.getElementById('check-groq').textContent = model === 'groq' ? '✓' : '';
+  document.getElementById('check-perplexity').textContent = model === 'perplexity' ? '✓' : '';
+  document.getElementById('check-gemini').textContent = model === 'gemini' ? '✓' : '';
+  
+  // Close dropdown
+  document.getElementById('modelDropdownMenu').classList.remove('show');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  const dropdown = document.getElementById('modelDropdownMenu');
+  const btn = document.getElementById('modelSelectorBtn');
+  
+  if (dropdown && btn && !dropdown.contains(e.target) && !btn.contains(e.target)) {
+    dropdown.classList.remove('show');
+  }
+});
+
+// Custom Modal Functions
+function showModal(message) {
+  const modal = document.getElementById('customModal');
+  const modalMessage = document.getElementById('modalMessage');
+  
+  modalMessage.textContent = message;
+  modal.classList.add('show');
+}
+
+function closeModal() {
+  const modal = document.getElementById('customModal');
+  modal.classList.remove('show');
+}
+
+document.getElementById('modalOkBtn').addEventListener('click', closeModal);
+document.getElementById('customModal').addEventListener('click', (e) => {
+  if (e.target.id === 'customModal') {
+    closeModal();
+  }
+});
+
+// Image handling functions
+function handleImageSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  // Validate file type
+  if (!file.type.startsWith('image/')) {
+    showModal('Please select an image file');
+    return;
+  }
+  
+  // Validate file size (max 4MB)
+  if (file.size > 4 * 1024 * 1024) {
+    showModal('Image size must be less than 4MB');
+    return;
+  }
+  
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    selectedImage = {
+      data: e.target.result.split(',')[1], // Get base64 data without prefix
+      mimeType: file.type
+    };
+    showImagePreview(e.target.result);
+  };
+  reader.readAsDataURL(file);
+}
+
+function showImagePreview(dataUrl) {
+  const thumbContainer = document.getElementById('imageThumbContainer');
+  const thumbImage = document.getElementById('imageThumb');
+  
+  thumbImage.src = dataUrl;
+  thumbContainer.style.display = 'block';
+}
+
+function clearImage() {
+  selectedImage = null;
+  const thumbContainer = document.getElementById('imageThumbContainer');
+  const thumbImage = document.getElementById('imageThumb');
+  
+  thumbContainer.style.display = 'none';
+  thumbImage.src = '';
+  document.getElementById('imageInput').value = '';
+}
+
 async function sendMessage() {
   const input = document.getElementById('userInput');
   const message = input.value.trim();
@@ -201,29 +312,48 @@ async function sendMessage() {
     welcomeMsg.remove();
   }
 
-  // Add user message
-  addMessage(message, 'user');
+  // Store the image URL for display in chat
+  const imageDataUrl = selectedImage ? document.getElementById('imageThumb').src : null;
+
+  // Add user message with image if present
+  addMessage(message, 'user', imageDataUrl);
   input.value = '';
   input.style.height = 'auto';
 
   // Show typing indicator
   showTypingIndicator();
 
-  // Disable send button
+  // Disable send button and input
   sendBtn.disabled = true;
   btnText.style.display = 'none';
   btnLoader.style.display = 'inline-block';
 
   try {
-    const response = await fetch('/api/chat', {
+    // Choose API endpoint based on selected model
+    let apiEndpoint = '/api/chat';
+    if (selectedModel === 'perplexity') {
+      apiEndpoint = '/api/perplexity';
+    } else if (selectedModel === 'gemini') {
+      apiEndpoint = '/api/gemini';
+    }
+    
+    // Prepare request body
+    const requestBody = {
+      message: message,
+      history: conversationHistory
+    };
+    
+    // Add image data if Gemini is selected and image is attached
+    if (selectedModel === 'gemini' && selectedImage) {
+      requestBody.image = selectedImage;
+    }
+    
+    const response = await fetch(apiEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        message: message,
-        history: conversationHistory
-      })
+      body: JSON.stringify(requestBody)
     });
 
     // Check if response has content before parsing
@@ -235,7 +365,7 @@ async function sendMessage() {
 
     const text = await response.text();
     if (!text) {
-      throw new Error('Server returned empty response. Please check if GROQ_API_KEY is set in Vercel environment variables.');
+      throw new Error(`Server returned empty response. Please check if ${selectedModel.toUpperCase()}_API_KEY is set in environment variables.`);
     }
 
     let data;
@@ -260,6 +390,11 @@ async function sendMessage() {
       { role: 'user', content: message },
       { role: 'assistant', content: data.message }
     );
+
+    // Clear image after successful send
+    if (selectedImage) {
+      clearImage();
+    }
 
     // Keep only last 10 messages to avoid token limits
     if (conversationHistory.length > 10) {
@@ -286,9 +421,7 @@ function showTypingIndicator() {
   const avatarDiv = document.createElement('div');
   avatarDiv.className = 'message-avatar assistant-avatar';
   avatarDiv.innerHTML = `
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
-    </svg>
+    <img src="logo.png" alt="AI">
   `;
 
   const contentDiv = document.createElement('div');
@@ -299,7 +432,7 @@ function showTypingIndicator() {
       <span class="dot"></span>
       <span class="dot"></span>
     </div>
-    <span class="typing-text">LolliBot is thinking...</span>
+    <span class="typing-text">ZORA is thinking...</span>
   `;
 
   typingDiv.appendChild(avatarDiv);
@@ -315,39 +448,49 @@ function removeTypingIndicator() {
   }
 }
 
-function addMessage(content, role) {
+function addMessage(content, role, imageUrl = null) {
   const chatContainer = document.getElementById('chatContainer');
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${role}-message`;
 
-  const avatarDiv = document.createElement('div');
-  avatarDiv.className = `message-avatar ${role}-avatar`;
-  
-  if (role === 'user') {
+  // Only add avatar for assistant messages
+  if (role === 'assistant') {
+    const avatarDiv = document.createElement('div');
+    avatarDiv.className = `message-avatar ${role}-avatar`;
+    
     avatarDiv.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-      </svg>
+      <img src="logo.png" alt="AI">
     `;
-  } else if (role === 'assistant') {
+    
+    messageDiv.appendChild(avatarDiv);
+  } else if (role === 'error') {
+    const avatarDiv = document.createElement('div');
+    avatarDiv.className = `message-avatar ${role}-avatar`;
+    
     avatarDiv.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
-      </svg>
-    `;
-  } else {
-    avatarDiv.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
       </svg>
     `;
+    
+    messageDiv.appendChild(avatarDiv);
   }
 
   const contentDiv = document.createElement('div');
   contentDiv.className = 'message-content';
 
+  // Add image if present (for user messages)
+  if (imageUrl && role === 'user') {
+    const imageDiv = document.createElement('div');
+    imageDiv.className = 'message-image';
+    imageDiv.innerHTML = `<img src="${imageUrl}" alt="Uploaded image" onclick="window.open('${imageUrl}', '_blank')">`;
+    contentDiv.appendChild(imageDiv);
+  }
+
   if (role === 'assistant') {
-    contentDiv.innerHTML = marked.parse(content);
+    const textDiv = document.createElement('div');
+    textDiv.innerHTML = marked.parse(content);
+    contentDiv.appendChild(textDiv);
     
     // Add copy buttons to code blocks
     setTimeout(() => {
@@ -370,10 +513,11 @@ function addMessage(content, role) {
       });
     }, 0);
   } else {
-    contentDiv.textContent = content;
+    const textDiv = document.createElement('div');
+    textDiv.textContent = content;
+    contentDiv.appendChild(textDiv);
   }
 
-  messageDiv.appendChild(avatarDiv);
   messageDiv.appendChild(contentDiv);
   chatContainer.appendChild(messageDiv);
   chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -404,7 +548,47 @@ function copyCode(codeBlock, button) {
 document.getElementById('userInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
-    sendMessage();
+    const sendBtn = document.getElementById('sendBtn');
+    if (!sendBtn.disabled) {
+      sendMessage();
+    }
+  }
+});
+
+// Handle paste events for images
+document.getElementById('userInput').addEventListener('paste', (e) => {
+  const items = e.clipboardData.items;
+  
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].type.indexOf('image') !== -1) {
+      e.preventDefault();
+      
+      // Check if Gemini is selected
+      if (selectedModel !== 'gemini') {
+        showModal('Image input is only available with Gemini model. Please select Gemini first.');
+        return;
+      }
+      
+      const blob = items[i].getAsFile();
+      
+      // Validate file size (max 4MB)
+      if (blob.size > 4 * 1024 * 1024) {
+        showModal('Image size must be less than 4MB');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        selectedImage = {
+          data: event.target.result.split(',')[1], // Get base64 data without prefix
+          mimeType: blob.type
+        };
+        showImagePreview(event.target.result);
+      };
+      reader.readAsDataURL(blob);
+      
+      break;
+    }
   }
 });
 
