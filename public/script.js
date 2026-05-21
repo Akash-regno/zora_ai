@@ -16,14 +16,9 @@ marked.setOptions({
   }
 });
 
-// Check if site was previously unlocked
+// Always show lock screen on page load
 window.addEventListener('DOMContentLoaded', () => {
-  const unlocked = localStorage.getItem('siteUnlocked');
-  if (unlocked === 'true') {
-    unlockSite();
-  } else {
-    showLockScreen();
-  }
+  showLockScreen();
 });
 
 // Listen for Ctrl+Shift+. keyboard shortcut (toggle lock/unlock)
@@ -47,7 +42,6 @@ function showLockScreen() {
 
 function unlockSite() {
   isUnlocked = true;
-  localStorage.setItem('siteUnlocked', 'true');
   
   const lockScreen = document.getElementById('lockScreen');
   lockScreen.style.display = 'none';
@@ -55,7 +49,6 @@ function unlockSite() {
 
 function lockSite() {
   isUnlocked = false;
-  localStorage.setItem('siteUnlocked', 'false');
   
   const lockScreen = document.getElementById('lockScreen');
   lockScreen.style.display = 'flex';
